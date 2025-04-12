@@ -1,6 +1,6 @@
 import { getRuntime } from "@astrojs/cloudflare/runtime";
 
-const API_BASE = "https://canary.discord.com/api/v10";
+const API_BASE = "https://discord.com/api/v10";
 const CDN_BASE = "https://cdn.discordapp.com";
 
 export async function sendRequest<T extends object = any>(req: Request, route: string) {
@@ -23,6 +23,26 @@ export async function sendRequest<T extends object = any>(req: Request, route: s
     );
 
     return res.json() as Promise<T>;
+}
+
+const SAFE_CHARACTERS = new Set([":", "?", "@"]);
+function encode(strings: TemplateStringsArray, ...args: Array<string | number>): string {
+    return strings.reduce((acc, str, i) => {
+        acc += str;
+
+        if (args[i] != null) {
+            const str = String(args[i]);
+            if (decodeURIComponent(str).includes("/"))
+                throw new Error("Invalid character in URL: /");
+
+            acc += Array.from(
+                String(str),
+                char => SAFE_CHARACTERS.has(char) ? char : (decodeURIComponent(char) === char ? encodeURIComponent(char) : char)
+            ).join("");
+        }
+
+        return acc;
+    }, "");
 }
 
 export interface User {
@@ -55,7 +75,11 @@ const flagNames: Record<number, string> = {
     22: "Active Developer",
 };
 
-export const getUser = (req: Request, id: string) => sendRequest<User>(req, `/users/${id}`);
+export async function getUser(req: Request, id: string) {
+    if (decodeURIComponent(id) === "@me") throw new Error("Not allowed to GET /users/@me");
+
+    return sendRequest<User>(req, encode`/users/${id}`);
+}
 
 const getExt = (asset: string) => asset.startsWith("a_") ? "gif" : "webp";
 
